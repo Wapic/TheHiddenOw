@@ -111,7 +111,7 @@ rule("removeHiddenProperties")
         Stop Forcing Player To Be Hero(Global Variable(HiddenPlayer));
         Set Invisible(Global Variable(HiddenPlayer), None);
         Set Move Speed(Global Variable(HiddenPlayer), 100);
-        Set Melee Enabled(Global Variable(HiddenPlayer), True);
+        Set Damage Dealt(Global Variable(HiddenPlayer), 100);
         Set Ability 1 Enabled(Global Variable(HiddenPlayer), True);
         Set Ability 2 Enabled(Global Variable(HiddenPlayer), True);
         Set Primary Fire Enabled(Global Variable(HiddenPlayer), True);
@@ -192,7 +192,7 @@ rule("setHiddenProperties")
         Start Forcing Player To Be Hero(Global Variable(HiddenPlayer), Hero(Genji));
         Set Invisible(Global Variable(HiddenPlayer), All);
         Set Move Speed(Global Variable(HiddenPlayer), 135);
-        Set Melee Enabled(Global Variable(HiddenPlayer), False);
+        Set Damage Dealt(Global Variable(HiddenPlayer), 0);
         Set Ability 1 Enabled(Global Variable(HiddenPlayer), False);
         Set Ability 2 Enabled(Global Variable(HiddenPlayer), False);
         Set Primary Fire Enabled(Global Variable(HiddenPlayer), False);
@@ -242,11 +242,14 @@ rule("customMelee")
         Global Variable(charge) >= Global Variable(meleeCost);
     }
 
-    // Action count: 3
+    // Action count: 6
     actions
     {
         Play Effect(Global Variable(HiddenPlayer), Doomfist Rising Uppercut Impact Effect, Color(White), Ray Cast Hit Player(Eye Position(Global Variable(HiddenPlayer)), Add(Eye Position(Global Variable(HiddenPlayer)), Multiply(Facing Direction Of(Global Variable(HiddenPlayer)), 1.6)), All Players(Team(Team1)), Global Variable(HiddenPlayer), True), 1);
-        Damage(Ray Cast Hit Player(Eye Position(Global Variable(HiddenPlayer)), Add(Eye Position(Global Variable(HiddenPlayer)), Multiply(Facing Direction Of(Global Variable(HiddenPlayer)), 1.6)), All Players(Team(Team1)), Global Variable(HiddenPlayer), True), Global Variable(HiddenPlayer), 150);
+        Set Damage Dealt(Global Variable(HiddenPlayer), 100);
+        Damage(Ray Cast Hit Player(Eye Position(Global Variable(HiddenPlayer)), Add(Eye Position(Global Variable(HiddenPlayer)), Multiply(Facing Direction Of(Global Variable(HiddenPlayer)), 1.75)), All Players(Team(Team1)), Global Variable(HiddenPlayer), True), Global Variable(HiddenPlayer), 150);
+        Set Damage Dealt(Global Variable(HiddenPlayer), 0);
+        Press Button(Global Variable(HiddenPlayer), Button(Melee));
         Set Global Variable(charge, Subtract(Global Variable(charge), Global Variable(meleeCost)));
     }
 }
@@ -379,9 +382,7 @@ rule("hiddenHUD")
 
     event
     {
-        Ongoing - Each Player;
-        Team2;
-        All;
+        Ongoing - Global;
     }
 
     conditions
@@ -392,7 +393,7 @@ rule("hiddenHUD")
     // Action count: 2
     actions
     {
-        Create In-World Text(Event Player, Custom String("{0}: Dash\n{1}: Melee\n{2}: Ultimate", Button(Secondary Fire), Button(Primary Fire), Button(Ultimate)), Update Every Frame(Add(Eye Position(Local Player), Multiply(100, Add(Add(Multiply(2, World Vector Of(Right, Local Player, Rotation)), Multiply(-1.2, Direction From Angles(Horizontal Angle From Direction(Facing Direction Of(Local Player)), Subtract(Vertical Angle From Direction(Facing Direction Of(Local Player)), 90)))), Multiply(3, Facing Direction Of(Local Player)))))), 2, Do Not Clip, Visible To Position and String, Color(White), Default Visibility);
+        Create In-World Text(Global Variable(HiddenPlayer), Custom String("{0}: Dash\n{1}: Melee\n{2}: Ultimate", Button(Secondary Fire), Button(Primary Fire), Button(Ultimate)), Update Every Frame(Add(Eye Position(Local Player), Multiply(100, Add(Add(Multiply(2, World Vector Of(Right, Local Player, Rotation)), Multiply(-1.2, Direction From Angles(Horizontal Angle From Direction(Facing Direction Of(Local Player)), Subtract(Vertical Angle From Direction(Facing Direction Of(Local Player)), 90)))), Multiply(3, Facing Direction Of(Local Player)))))), 2, Do Not Clip, Visible To Position and String, Color(White), Default Visibility);
         Create Progress Bar HUD Text(Global Variable(HiddenPlayer), Global Variable(charge), Null, Top, 0, Color(Gray), Color(White), Values, Default Visibility);
     }
 }

@@ -58,7 +58,7 @@ if ((IsGameInProgress() || debugMode) == true) {
     ForcePlayerHero(HiddenPlayer, Hero.Genji);
     SetInvisible(HiddenPlayer, InvisibleTo.All);
     SetMoveSpeed(HiddenPlayer, 135);
-    SetMeleeEnabled(HiddenPlayer, false);
+    SetDamageDealt(HiddenPlayer, 0);
     SetAbility1Enabled(HiddenPlayer, false);
     SetAbility2Enabled(HiddenPlayer, false);
     SetPrimaryFireEnabled(HiddenPlayer, false);
@@ -73,7 +73,7 @@ void removeHiddenProps() "removeHiddenProperties" {
     StopForcingHero(HiddenPlayer);
     SetInvisible(HiddenPlayer, InvisibleTo.None);
     SetMoveSpeed(HiddenPlayer, 100);
-    SetMeleeEnabled(HiddenPlayer, true);
+    SetDamageDealt(HiddenPlayer, 100);
     SetAbility1Enabled(HiddenPlayer, true);
     SetAbility2Enabled(HiddenPlayer, true);
     SetPrimaryFireEnabled(HiddenPlayer, true);
@@ -98,7 +98,10 @@ if ((IsGameInProgress() || debugMode) == true)
 if ((IsButtonHeld(HiddenPlayer, Button.PrimaryFire) || IsButtonHeld(HiddenPlayer, Button.Melee)) == true)
 if (charge >= meleeCost) {
     PlayEffect(HiddenPlayer, PlayEffect.DoomfistRisingUppercutImpactEffect, Color.White, RayCastHitPlayer(EyePosition(HiddenPlayer), EyePosition(HiddenPlayer) + FacingDirectionOf(HiddenPlayer) * 1.6, AllPlayers(Team.Team1), HiddenPlayer, true), 1);
-    Damage(RayCastHitPlayer(EyePosition(HiddenPlayer), EyePosition(HiddenPlayer) + FacingDirectionOf(HiddenPlayer) * 1.6, AllPlayers(Team.Team1), HiddenPlayer, true), HiddenPlayer, 150);
+    SetDamageDealt(HiddenPlayer, 100);
+    Damage(RayCastHitPlayer(EyePosition(HiddenPlayer), EyePosition(HiddenPlayer) + FacingDirectionOf(HiddenPlayer) * 1.75, AllPlayers(Team.Team1), HiddenPlayer, true), HiddenPlayer, 150);
+    SetDamageDealt(HiddenPlayer, 0);
+    PressButton(HiddenPlayer, Button.Melee);
     charge = charge - meleeCost;
 }
 
@@ -149,10 +152,9 @@ if(IsGameInProgress() == true){
 }
 
 rule: "hiddenHUD"
-Event.OngoingPlayer
-Team.Team2
+Event.OngoingGlobal
 if((IsGameInProgress() || debugMode) == true){
-    CreateInWorldText(EventPlayer(), <"<0>: Dash\n<1>: Melee\n<2>: Ultimate", Button.SecondaryFire, Button.PrimaryFire, Button.Ultimate>, UpdateEveryFrame(EyePosition(LocalPlayer()) + 100 * (2 * WorldVectorOf(Right(), LocalPlayer(), LocalVector.Rotation) + (-1 - 0.200) * DirectionFromAngles(HorizontalAngleFromDirection(FacingDirectionOf(LocalPlayer())), VerticalAngleFromDirection(FacingDirectionOf(LocalPlayer())) - 90) + 3 * FacingDirectionOf(LocalPlayer()))), 2, Clipping.DoNotClip, InworldTextRev.VisibleToPositionAndString, Color.White, Spectators.DefaultVisibility);
+    CreateInWorldText(HiddenPlayer, <"<0>: Dash\n<1>: Melee\n<2>: Ultimate", Button.SecondaryFire, Button.PrimaryFire, Button.Ultimate>, UpdateEveryFrame(EyePosition(LocalPlayer()) + 100 * (2 * WorldVectorOf(Right(), LocalPlayer(), LocalVector.Rotation) + (-1 - 0.200) * DirectionFromAngles(HorizontalAngleFromDirection(FacingDirectionOf(LocalPlayer())), VerticalAngleFromDirection(FacingDirectionOf(LocalPlayer())) - 90) + 3 * FacingDirectionOf(LocalPlayer()))), 2, Clipping.DoNotClip, InworldTextRev.VisibleToPositionAndString, Color.White, Spectators.DefaultVisibility);
     CreateProgressBarHudText(HiddenPlayer, charge, null, Location.Top, 0, Color.Gray, Color.White, ProgressBarHudEvaluation.Values, Spectators.DefaultVisibility);
 }
 
