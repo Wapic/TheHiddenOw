@@ -9,6 +9,7 @@ globalvar define ultCost = 30; //charge per second
 globalvar define dashCost = 35; //cost per usage
 globalvar define meleeCost = 25; //cost per usage
 globalvar define ultActive = false;
+globalvar define lastMelee;
 
 rule: "onFullLobby"
 if (IsGameInProgress() == false)
@@ -38,8 +39,8 @@ if (IsGameInProgress() == false) {
     MovePlayerToTeam(HiddenPlayer, Team.Team2, -1);
     DisableRespawning(AllPlayers(Team.All));
     DisableCompletion();
-    BigMessage(AllPlayers(Team.Team1), "Game started! Eliminate the Hidden.");
-    BigMessage(AllPlayers(Team.Team2), "Game started! Eliminate the Survivors.");
+    SetObjectiveDescription(HiddenPlayer, "Eliminate all the survivors" ,HudTextRev.None);
+    SetObjectiveDescription(AllPlayers(Team.Team1), "Eliminate the hidden", HudTextRev.VisibleTo);
     PauseMatchTime();
 }
 
@@ -96,13 +97,23 @@ if (charge >= dashCost) {
 rule: "customMelee"
 if ((IsGameInProgress() || debugMode) == true)
 if ((IsButtonHeld(HiddenPlayer, Button.PrimaryFire) || IsButtonHeld(HiddenPlayer, Button.Melee)) == true)
+if (TotalTimeElapsed() >= lastMelee + 1)
 if (charge >= meleeCost) {
-    PlayEffect(HiddenPlayer, PlayEffect.DoomfistRisingUppercutImpactEffect, Color.White, RayCastHitPlayer(EyePosition(HiddenPlayer), EyePosition(HiddenPlayer) + FacingDirectionOf(HiddenPlayer) * 1.6, AllPlayers(Team.Team1), HiddenPlayer, true), 1);
+    lastMelee = TotalTimeElapsed();
+    PressButton(HiddenPlayer, Button.Melee);
     SetDamageDealt(HiddenPlayer, 100);
     Damage(RayCastHitPlayer(EyePosition(HiddenPlayer), EyePosition(HiddenPlayer) + FacingDirectionOf(HiddenPlayer) * 1.75, AllPlayers(Team.Team1), HiddenPlayer, true), HiddenPlayer, 150);
+    PlayEffect(HiddenPlayer, PlayEffect.DoomfistRisingUppercutImpactEffect, Color.White, RayCastHitPlayer(EyePosition(HiddenPlayer), EyePosition(HiddenPlayer) + FacingDirectionOf(HiddenPlayer) * 1.6, AllPlayers(Team.Team1), HiddenPlayer, true), 1);
     SetDamageDealt(HiddenPlayer, 0);
-    PressButton(HiddenPlayer, Button.Melee);
     charge = charge - meleeCost;
+}
+
+rule: "disableMeleeOnNoCharge"
+if((IsGameInProgress() || debugMode) == true)
+if(charge < meleeCost){
+    SetMeleeEnabled(HiddenPlayer, false);
+    Wait((meleeCost - charge) / (rechargeRate * (1 / tickrate)) * (1 / tickrate), WaitBehavior.RestartWhenTrue);
+    SetMeleeEnabled(HiddenPlayer, true);
 }
 
 rule: "customUltimate"
@@ -111,7 +122,7 @@ Team.Team1
 if((IsGameInProgress() || debugMode) == true)
 if(IsButtonHeld(HiddenPlayer, Button.Ultimate) == true) {
     ultActive = !ultActive;
-    StartForcingPlayerOutlines(AllLivingPlayers(Team.Team1), HiddenPlayer, true, ultActive == true ? CustomColor(255 / Health(EventPlayer()), 255 / (playerHealth / Health(EventPlayer())) , 0, 255) : CustomColor(0, 0, 0, 0), OutlineType.Always);
+    StartForcingPlayerOutlines(AllLivingPlayers(Team.Team1), HiddenPlayer, true, ultActive == true ? CustomColor(255 / Health(EventPlayer()), 255 / (playerHealth / Health(EventPlayer())) ,0 , 255) : CustomColor(0, 0, 0, 0), OutlineType.Always);
 }
 
 rule: "channelUlt" 

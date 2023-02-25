@@ -12,6 +12,7 @@ variables
         8: dashCost
         9: meleeCost
         10: ultActive
+        11: lastMelee
 }
 
 subroutines
@@ -90,8 +91,8 @@ rule("StartGame")
         Move Player To Team(Global Variable(HiddenPlayer), Team(Team2), -1);
         Disable Built-In Game Mode Respawning(All Players(Team(All)));
         Disable Built-In Game Mode Completion;
-        Big Message(All Players(Team(Team1)), Custom String("Game started! Eliminate the Hidden.", Null, Null, Null));
-        Big Message(All Players(Team(Team2)), Custom String("Game started! Eliminate the Survivors.", Null, Null, Null));
+        Set Objective Description(Global Variable(HiddenPlayer), Custom String("Eliminate all the survivors", Null, Null, Null), None);
+        Set Objective Description(All Players(Team(Team1)), Custom String("Eliminate the hidden", Null, Null, Null), Visible To);
         Pause Match Time;
     }
 }
@@ -239,18 +240,43 @@ rule("customMelee")
     {
         Or(Is Game In Progress, Global Variable(debugMode)) == True;
         Or(Is Button Held(Global Variable(HiddenPlayer), Button(Primary Fire)), Is Button Held(Global Variable(HiddenPlayer), Button(Melee))) == True;
+        Total Time Elapsed >= Add(Global Variable(lastMelee), 1);
         Global Variable(charge) >= Global Variable(meleeCost);
     }
 
-    // Action count: 6
+    // Action count: 7
     actions
     {
-        Play Effect(Global Variable(HiddenPlayer), Doomfist Rising Uppercut Impact Effect, Color(White), Ray Cast Hit Player(Eye Position(Global Variable(HiddenPlayer)), Add(Eye Position(Global Variable(HiddenPlayer)), Multiply(Facing Direction Of(Global Variable(HiddenPlayer)), 1.6)), All Players(Team(Team1)), Global Variable(HiddenPlayer), True), 1);
+        Set Global Variable(lastMelee, Total Time Elapsed);
+        Press Button(Global Variable(HiddenPlayer), Button(Melee));
         Set Damage Dealt(Global Variable(HiddenPlayer), 100);
         Damage(Ray Cast Hit Player(Eye Position(Global Variable(HiddenPlayer)), Add(Eye Position(Global Variable(HiddenPlayer)), Multiply(Facing Direction Of(Global Variable(HiddenPlayer)), 1.75)), All Players(Team(Team1)), Global Variable(HiddenPlayer), True), Global Variable(HiddenPlayer), 150);
+        Play Effect(Global Variable(HiddenPlayer), Doomfist Rising Uppercut Impact Effect, Color(White), Ray Cast Hit Player(Eye Position(Global Variable(HiddenPlayer)), Add(Eye Position(Global Variable(HiddenPlayer)), Multiply(Facing Direction Of(Global Variable(HiddenPlayer)), 1.6)), All Players(Team(Team1)), Global Variable(HiddenPlayer), True), 1);
         Set Damage Dealt(Global Variable(HiddenPlayer), 0);
-        Press Button(Global Variable(HiddenPlayer), Button(Melee));
         Set Global Variable(charge, Subtract(Global Variable(charge), Global Variable(meleeCost)));
+    }
+}
+
+rule("disableMeleeOnNoCharge")
+{
+
+    event
+    {
+        Ongoing - Global;
+    }
+
+    conditions
+    {
+        Or(Is Game In Progress, Global Variable(debugMode)) == True;
+        Global Variable(charge) < Global Variable(meleeCost);
+    }
+
+    // Action count: 3
+    actions
+    {
+        Set Melee Enabled(Global Variable(HiddenPlayer), False);
+        Wait(Multiply(Divide(Subtract(Global Variable(meleeCost), Global Variable(charge)), Multiply(Global Variable(rechargeRate), Divide(1, Global Variable(tickrate)))), Divide(1, Global Variable(tickrate))), Restart When True);
+        Set Melee Enabled(Global Variable(HiddenPlayer), True);
     }
 }
 
