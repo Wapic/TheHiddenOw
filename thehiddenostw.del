@@ -6,10 +6,10 @@ globalvar define tickrate = 40;
 globalvar define charge = 100; //currentCharge
 globalvar define rechargeRate = 10; //charge per seconds
 globalvar define ultCost = 30; //charge per second
+globalvar define ultActivateCost = 15; //cost per activation
 globalvar define dashCost = 35; //cost per usage
 globalvar define meleeCost = 25; //cost per usage
 globalvar define ultActive = false;
-globalvar define lastMelee;
 
 rule: "onFullLobby"
 if (IsGameInProgress() == false)
@@ -18,29 +18,31 @@ if (NumberOfPlayers(Team.All) == 6) {
     StartGameMode();
 }
 
-void EndGame() "EndGame" {
-    removeHiddenProps();
-    HiddenPlayer = null;
-    EnableRespawning(AllPlayers(Team.All));
-    UnpauseMatchTime();
-    if(IsMatchComplete()){
-        RestartMatch();
-        Wait(15);
-        StartGameMode();
-    }
+void disableFeatures() "disableFeatures" {
+    DisableRespawning(AllPlayers(Team.All));
+    DisableCompletion();
+    DisableScoring();
+    DisableKillFeed(AllPlayers(Team.All));
 }
 
-rule: "StartGame"
-if (IsAssemblingHeroes() == true)
+void endGame() "endGame" {
+    removeHiddenProps();
+    HiddenPlayer = null;
+    UnpauseMatchTime();
+    GoToAssembleHeroes();
+}
+
+rule: "startGame" 
+if (IsAssemblingHeroes() == true) 
 if (IsGameInProgress() == false) {
     MovePlayerToTeam(AllPlayers(Team.Team2)[0], Team.Team1, -1);
     WaitUntil(IsGameInProgress(), 30);
     HiddenPlayer = RandomValueInArray(AllPlayers(Team.Team1));
     MovePlayerToTeam(HiddenPlayer, Team.Team2, -1);
-    DisableRespawning(AllPlayers(Team.All));
-    DisableCompletion();
-    SetObjectiveDescription(HiddenPlayer, "Eliminate all the survivors" ,HudTextRev.None);
+    SetObjectiveDescription(HiddenPlayer, "Eliminate all the survivors" ,HudTextRev.VisibleTo);
     SetObjectiveDescription(AllPlayers(Team.Team1), "Eliminate the hidden", HudTextRev.VisibleTo);
+    StartForcingPlayerOutlines(AllPlayers(Team.All), AllPlayers(Team.All), true, CustomColor(0, 0, 0, 0), OutlineType.Always);
+    disableFeatures();
     PauseMatchTime();
 }
 
@@ -49,12 +51,17 @@ Event.OnDeath
 Team.All
 if (AllDeadPlayers(TeamOf(EventPlayer())) == AllPlayers(TeamOf(EventPlayer())))
 if (IsGameInProgress() == true) {
-    BigMessage(AllPlayers(Team.All), <"<0> Wins!", TeamOf(EventPlayer()).Opposite>);
-    DeclareTeamVictory(TeamOf(EventPlayer()).Opposite);
-    EndGame();
+    BigMessage(AllPlayers(Team.All), <"<0>", TeamOf(EventPlayer()) == Team.Team1 ? "The Hidden Wins!" : "The Survivors Win!">);
+    SetSlowMotion(25);
+    Wait(2);
+    SetSlowMotion(100);
+    endGame();
 }
 
 rule: "setHiddenProperties"
+Event.OngoingPlayer
+Team.Team2
+Player.Slot0
 if ((IsGameInProgress() || debugMode) == true) {
     ForcePlayerHero(HiddenPlayer, Hero.Genji);
     SetInvisible(HiddenPlayer, InvisibleTo.All);
@@ -67,7 +74,6 @@ if ((IsGameInProgress() || debugMode) == true) {
     SetSecondaryFireEnabled(HiddenPlayer, false);
     SetUltimateAbilityEnabled(HiddenPlayer, false);
     DisableMovementCollisionWithPlayers(HiddenPlayer);
-    StartForcingPlayerOutlines(AllLivingPlayers(Team.Team1), HiddenPlayer, true, CustomColor(0, 0, 0, 0), OutlineType.Always);
     CreateEffect(PlayersWithinRadius(HiddenPlayer, 15, Team.Team1, RadiusLOS.SurfacesAndAllBarriers), Effect.MeiFrozenEffect, Color.Gray, Vector(PositionOf(HiddenPlayer).X, PositionOf(HiddenPlayer).Y + 0.75, PositionOf(HiddenPlayer).Z), 1.5, EffectRev.VisibleToPositionAndRadius);
 }
 
@@ -86,6 +92,7 @@ void removeHiddenProps() "removeHiddenProperties" {
     StopForcingPlayerOutlines(AllPlayers(Team.Team1), HiddenPlayer);
     DestroyAllEffects();
     DestroyAllProgressBarHudText();
+    DestroyAllHudText();
 }
 
 rule: "customDash"
@@ -99,9 +106,7 @@ if (charge >= dashCost) {
 rule: "customMelee"
 if ((IsGameInProgress() || debugMode) == true)
 if ((IsButtonHeld(HiddenPlayer, Button.PrimaryFire) || IsButtonHeld(HiddenPlayer, Button.Melee)) == true)
-if (TotalTimeElapsed() >= lastMelee + 1)
 if (charge >= meleeCost) {
-    lastMelee = TotalTimeElapsed();
     SetMeleeEnabled(HiddenPlayer, true);
     PressButton(HiddenPlayer, Button.Melee);
     SetMeleeEnabled(HiddenPlayer, false);
@@ -110,14 +115,20 @@ if (charge >= meleeCost) {
     SetDamageDealt(HiddenPlayer, 0);
     PlayEffect(HiddenPlayer, PlayEffect.DoomfistRisingUppercutImpactEffect, Color.White, RayCastHitPlayer(EyePosition(HiddenPlayer), EyePosition(HiddenPlayer) + FacingDirectionOf(HiddenPlayer) * 1.6, AllPlayers(Team.Team1), HiddenPlayer, true), 1);
     charge = charge - meleeCost;
+    Wait(1, WaitBehavior.IgnoreCondition);
 }
+
 rule: "customUltimate"
 Event.OngoingPlayer
 Team.Team1
 if((IsGameInProgress() || debugMode) == true)
-if(IsButtonHeld(HiddenPlayer, Button.Ultimate) == true) {
+if(IsButtonHeld(HiddenPlayer, Button.Ultimate) == true)
+if((charge >= ultActivateCost || ultActive)) {
     ultActive = !ultActive;
-    StartForcingPlayerOutlines(AllLivingPlayers(Team.Team1), HiddenPlayer, true, ultActive == true ? CustomColor(255 / Health(EventPlayer()), 255 / (playerHealth / Health(EventPlayer())) ,0 , 255) : CustomColor(0, 0, 0, 0), OutlineType.Always);
+    StartForcingPlayerOutlines(AllLivingPlayers(Team.Team1), HiddenPlayer, true, ultActive == true ? CustomColor(255 / Health(EventPlayer()), 255 / (playerHealth / Health(EventPlayer())), 0, 255) : CustomColor(0, 0, 0, 0), OutlineType.Always);
+    if(ultActive == true){
+        charge = charge - ultActivateCost;
+    }
 }
 
 rule: "channelUlt" 
@@ -140,28 +151,11 @@ if ((IsGameInProgress() || debugMode) == true) {
     SetPlayerHealth(EventPlayer(), 250);
 }
 
-rule: "playerLeft"
-Event.OnPlayerLeave
-if(IsGameInProgress() == true) {
-    BigMessage(AllPlayers(Team.All), <"<0> got scared and ran away!", EventPlayer()>);
-    if(TeamOf(EventPlayer()) == Team.Team2){
-        DeclareTeamVictory(Team.Team1);
-        EndGame();
-    }
-}
-
-rule: "playerJoined"
-Event.OnPlayerJoin
-if(IsGameInProgress() == true){
-    BigMessage(AllPlayers(Team.All), <"<0> ain't scared of no ghost", EventPlayer()>);
-    MovePlayerToTeam(EventPlayer(), Team.Team1, -1);
-}
-
 rule: "hiddenHUD"
 Event.OngoingGlobal
 if((IsGameInProgress() || debugMode) == true){
-    CreateInWorldText(HiddenPlayer, <"<0>: Dash\n<1>: Melee\n<2>: Ultimate", Button.SecondaryFire, Button.PrimaryFire, Button.Ultimate>, UpdateEveryFrame(EyePosition(LocalPlayer()) + 100 * (2 * WorldVectorOf(Right(), LocalPlayer(), LocalVector.Rotation) + (-1 - 0.200) * DirectionFromAngles(HorizontalAngleFromDirection(FacingDirectionOf(LocalPlayer())), VerticalAngleFromDirection(FacingDirectionOf(LocalPlayer())) - 90) + 3 * FacingDirectionOf(LocalPlayer()))), 2, Clipping.DoNotClip, InworldTextRev.VisibleToPositionAndString, Color.White, Spectators.DefaultVisibility);
-    CreateProgressBarHudText(HiddenPlayer, charge, null, Location.Top, 0, Color.Gray, Color.White, ProgressBarHudEvaluation.Values, Spectators.DefaultVisibility);
+    CreateHudText(HiddenPlayer, null, null, "Dash: Secondary Fire\nMelee: Primary Fire\nSpecial: Ultimate", Location.Left, 0, Color.White, Color.White, Color.White, HudTextRev.VisibleTo, Spectators.DefaultVisibility);
+    CreateProgressBarHudText(HiddenPlayer, charge, null, Location.Left, 1, Color.Gray, Color.White, ProgressBarHudEvaluation.Values, Spectators.DefaultVisibility);
 }
 
 rule: "recharge"
