@@ -60,6 +60,7 @@ if ((IsGameInProgress() || debugMode) == true) {
     SetInvisible(HiddenPlayer, InvisibleTo.All);
     SetMoveSpeed(HiddenPlayer, 135);
     SetDamageDealt(HiddenPlayer, 0);
+    SetMeleeEnabled(HiddenPlayer, false);
     SetAbility1Enabled(HiddenPlayer, false);
     SetAbility2Enabled(HiddenPlayer, false);
     SetPrimaryFireEnabled(HiddenPlayer, false);
@@ -75,6 +76,7 @@ void removeHiddenProps() "removeHiddenProperties" {
     SetInvisible(HiddenPlayer, InvisibleTo.None);
     SetMoveSpeed(HiddenPlayer, 100);
     SetDamageDealt(HiddenPlayer, 100);
+    SetMeleeEnabled(HiddenPlayer, true);
     SetAbility1Enabled(HiddenPlayer, true);
     SetAbility2Enabled(HiddenPlayer, true);
     SetPrimaryFireEnabled(HiddenPlayer, true);
@@ -100,22 +102,15 @@ if ((IsButtonHeld(HiddenPlayer, Button.PrimaryFire) || IsButtonHeld(HiddenPlayer
 if (TotalTimeElapsed() >= lastMelee + 1)
 if (charge >= meleeCost) {
     lastMelee = TotalTimeElapsed();
+    SetMeleeEnabled(HiddenPlayer, true);
     PressButton(HiddenPlayer, Button.Melee);
+    SetMeleeEnabled(HiddenPlayer, false);
     SetDamageDealt(HiddenPlayer, 100);
     Damage(RayCastHitPlayer(EyePosition(HiddenPlayer), EyePosition(HiddenPlayer) + FacingDirectionOf(HiddenPlayer) * 1.75, AllPlayers(Team.Team1), HiddenPlayer, true), HiddenPlayer, 150);
-    PlayEffect(HiddenPlayer, PlayEffect.DoomfistRisingUppercutImpactEffect, Color.White, RayCastHitPlayer(EyePosition(HiddenPlayer), EyePosition(HiddenPlayer) + FacingDirectionOf(HiddenPlayer) * 1.6, AllPlayers(Team.Team1), HiddenPlayer, true), 1);
     SetDamageDealt(HiddenPlayer, 0);
+    PlayEffect(HiddenPlayer, PlayEffect.DoomfistRisingUppercutImpactEffect, Color.White, RayCastHitPlayer(EyePosition(HiddenPlayer), EyePosition(HiddenPlayer) + FacingDirectionOf(HiddenPlayer) * 1.6, AllPlayers(Team.Team1), HiddenPlayer, true), 1);
     charge = charge - meleeCost;
 }
-
-rule: "disableMeleeOnNoCharge"
-if((IsGameInProgress() || debugMode) == true)
-if(charge < meleeCost){
-    SetMeleeEnabled(HiddenPlayer, false);
-    Wait((meleeCost - charge) / (rechargeRate * (1 / tickrate)) * (1 / tickrate), WaitBehavior.RestartWhenTrue);
-    SetMeleeEnabled(HiddenPlayer, true);
-}
-
 rule: "customUltimate"
 Event.OngoingPlayer
 Team.Team1
