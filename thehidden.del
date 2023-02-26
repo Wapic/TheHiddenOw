@@ -36,14 +36,15 @@ rule: "startGame"
 if (IsAssemblingHeroes() == true) 
 if (IsGameInProgress() == false) {
     MovePlayerToTeam(AllPlayers(Team.Team2)[0], Team.Team1, -1);
-    WaitUntil(IsGameInProgress(), 30);
     HiddenPlayer = RandomValueInArray(AllPlayers(Team.Team1));
     MovePlayerToTeam(HiddenPlayer, Team.Team2, -1);
+    WaitUntil(IsGameInProgress(), 30);
     SetObjectiveDescription(HiddenPlayer, "Eliminate all the survivors" ,HudTextRev.VisibleTo);
     SetObjectiveDescription(AllPlayers(Team.Team1), "Eliminate the hidden", HudTextRev.VisibleTo);
     StartForcingPlayerOutlines(AllPlayers(Team.All), AllPlayers(Team.All), true, CustomColor(0, 0, 0, 0), OutlineType.Always);
     disableFeatures();
     PauseMatchTime();
+    setSurvivorProperties();
 }
 
 rule: "onDeath"
@@ -62,7 +63,7 @@ rule: "setHiddenProperties"
 Event.OngoingPlayer
 Team.Team2
 Player.Slot0
-if ((IsGameInProgress() || debugMode) == true) {
+if (HiddenPlayer != null) { //why this doesn't work as a subroutine/void is beyond me
     ForcePlayerHero(HiddenPlayer, Hero.Genji);
     SetInvisible(HiddenPlayer, InvisibleTo.All);
     SetMoveSpeed(HiddenPlayer, 135);
@@ -108,26 +109,27 @@ if ((IsGameInProgress() || debugMode) == true)
 if ((IsButtonHeld(HiddenPlayer, Button.PrimaryFire) || IsButtonHeld(HiddenPlayer, Button.Melee)) == true)
 if (charge >= meleeCost) {
     SetMeleeEnabled(HiddenPlayer, true);
-    PressButton(HiddenPlayer, Button.Melee);
+    PressButton(HiddenPlayer, Button.Melee); //play melee animation
     SetMeleeEnabled(HiddenPlayer, false);
     SetDamageDealt(HiddenPlayer, 100);
     Damage(RayCastHitPlayer(EyePosition(HiddenPlayer), EyePosition(HiddenPlayer) + FacingDirectionOf(HiddenPlayer) * 1.75, AllPlayers(Team.Team1), HiddenPlayer, true), HiddenPlayer, 150);
     SetDamageDealt(HiddenPlayer, 0);
-    PlayEffect(HiddenPlayer, PlayEffect.DoomfistRisingUppercutImpactEffect, Color.White, RayCastHitPlayer(EyePosition(HiddenPlayer), EyePosition(HiddenPlayer) + FacingDirectionOf(HiddenPlayer) * 1.6, AllPlayers(Team.Team1), HiddenPlayer, true), 1);
+    PlayEffect(HiddenPlayer, PlayEffect.DoomfistRisingUppercutImpactEffect, Color.White, RayCastHitPlayer(EyePosition(HiddenPlayer), EyePosition(HiddenPlayer) + FacingDirectionOf(HiddenPlayer) * 1.75, AllPlayers(Team.Team1), HiddenPlayer, true), 1);
     charge = charge - meleeCost;
-    Wait(1, WaitBehavior.IgnoreCondition);
+    Wait(1, WaitBehavior.IgnoreCondition); //wait 1s to allow melee animation to be available again
 }
 
 rule: "customUltimate"
-Event.OngoingPlayer
-Team.Team1
 if((IsGameInProgress() || debugMode) == true)
 if(IsButtonHeld(HiddenPlayer, Button.Ultimate) == true)
-if((charge >= ultActivateCost || ultActive)) {
-    ultActive = !ultActive;
-    StartForcingPlayerOutlines(AllLivingPlayers(Team.Team1), HiddenPlayer, true, ultActive == true ? CustomColor(255 / Health(EventPlayer()), 255 / (playerHealth / Health(EventPlayer())), 0, 255) : CustomColor(0, 0, 0, 0), OutlineType.Always);
-    if(ultActive == true){
+if((charge >= ultActivateCost || ultActive) == true) {
+    if(ultActive == false){
         charge = charge - ultActivateCost;
+    }
+    ultActive = !ultActive;
+    for (define i = 0; i < NumberOfLivingPlayers(Team.Team1); i++)
+    {
+        StartForcingPlayerOutlines(AllLivingPlayers(Team.Team1)[i], HiddenPlayer, true, ultActive == true ? CustomColor(255 / Health(AllLivingPlayers(Team.Team1)[i]), 255 / (playerHealth / Health(AllLivingPlayers(Team.Team1)[i])), 0, 255) : CustomColor(0, 0, 0, 0), OutlineType.Always);    
     }
 }
 
@@ -143,12 +145,14 @@ if(ultActive){
     Loop();
 }
 
-rule: "setSurvivorProperties"
-Event.OngoingPlayer
-Team.Team1
-if ((IsGameInProgress() || debugMode) == true) {
-    SetMaxHealth(EventPlayer(), playerHealth / MaxHealth(EventPlayer()) * 100);
-    SetPlayerHealth(EventPlayer(), 250);
+void setSurvivorProperties() "setSurvivorProps" {
+    for (define n = 0; n < NumberOfPlayers(Team.Team1); n++){
+        if(MaxHealth(AllPlayers(Team.Team1)[n]) != 250){
+            SetMaxHealth(AllPlayers(Team.Team1)[n], playerHealth / MaxHealth(AllLivingPlayers(Team.Team1)[n]) * 100);
+            SetPlayerHealth(AllPlayers(Team.Team1)[n], playerHealth);
+            Wait(0.1);
+        }
+    }
 }
 
 rule: "hiddenHUD"
@@ -177,13 +181,8 @@ if (IsButtonHeld(HostPlayer(), Button.Interact) == true) {
         HiddenPlayer = null;
         debugMode = false;
     } else {
-        if (TeamOf(HostPlayer()) == Team.Team1) {
-            CreateDummyBot(Hero.Genji, Team.Team2, -1, HostPlayer(), HostPlayer());
-            HiddenPlayer = ClosestPlayerTo(HostPlayer());
-        } else {
-            CreateDummyBot(Hero.Doomfist, Team.Team1, -1, HostPlayer(), HostPlayer());
-            HiddenPlayer = HostPlayer();
-        }
+        CreateDummyBot(Hero.Genji, OppositeTeamOf(TeamOf(HostPlayer())), -1, HostPlayer(), HostPlayer());
+        HiddenPlayer = TeamOf(HostPlayer()) == Team.Team1 ? ClosestPlayerTo(HostPlayer()) : HostPlayer();
         debugMode = true;
     }
 }
