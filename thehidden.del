@@ -1,3 +1,5 @@
+import "customGameSettings.lobby";
+
 globalvar define HiddenPlayer = null;
 globalvar define debugMode = false;
 globalvar define playerHealth = 250;
