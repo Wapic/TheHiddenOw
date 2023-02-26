@@ -1,1 +1,2 @@
 *.del linguist-language=C#
+*.lobby linguist-language=json
