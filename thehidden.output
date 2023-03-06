@@ -56,20 +56,21 @@ variables
         2: playerHealth
         3: maxCharge
         4: tickrate
-        5: charge
-        6: rechargeRate
-        7: ultCost
-        8: ultActivateCost
-        9: dashCost
-        10: meleeCost
-        11: ultActive
-        12: n
-        13: i
+        5: tps
+        6: charge
+        7: rechargeRate
+        8: ultCost
+        9: ultActivateCost
+        10: dashCost
+        11: meleeCost
+        12: ultActive
+        13: n
+        14: i
 }
 
 subroutines
 {
-    0: disableFeatures
+    0: disableGameFeatures
     1: setSurvivorProperties
     2: endGame
     3: removeHiddenProps
@@ -83,7 +84,7 @@ rule("Initial Global")
         Ongoing - Global;
     }
 
-    // Action count: 12
+    // Action count: 13
     actions
     {
         Set Global Variable(HiddenPlayer, Null);
@@ -91,6 +92,7 @@ rule("Initial Global")
         Set Global Variable(playerHealth, 250);
         Set Global Variable(maxCharge, 100);
         Set Global Variable(tickrate, 40);
+        Set Global Variable(tps, Divide(1, Global Variable(tickrate)));
         Set Global Variable(charge, 100);
         Set Global Variable(rechargeRate, 10);
         Set Global Variable(ultCost, 30);
@@ -123,13 +125,13 @@ rule("onFullLobby")
     }
 }
 
-rule("disableFeatures")
+rule("disableGameFeatures")
 {
 
     event
     {
         Subroutine;
-        disableFeatures;
+        disableGameFeatures;
     }
 
     // Action count: 4
@@ -190,7 +192,7 @@ rule("startGame")
         Set Objective Description(Global Variable(HiddenPlayer), Custom String("Eliminate all the survivors", Null, Null, Null), Visible To);
         Set Objective Description(All Players(Team(Team1)), Custom String("Eliminate the hidden", Null, Null, Null), Visible To);
         Start Forcing Player Outlines(All Players(Team(All)), All Players(Team(All)), True, Custom Color(0, 0, 0, 0), Always);
-        Call Subroutine(disableFeatures);
+        Call Subroutine(disableGameFeatures);
         Pause Match Time;
         Call Subroutine(setSurvivorProperties);
     }
@@ -323,8 +325,8 @@ rule("customDash")
     // Action count: 2
     actions
     {
-        Apply Impulse(Global Variable(HiddenPlayer), Vector(X Component Of(Facing Direction Of(Global Variable(HiddenPlayer))), Add(Y Component Of(Facing Direction Of(Global Variable(HiddenPlayer))), 0.35), Z Component Of(Facing Direction Of(Global Variable(HiddenPlayer)))), 17.5, To World, Cancel Contrary Motion);
         Set Global Variable(charge, Subtract(Global Variable(charge), Global Variable(dashCost)));
+        Apply Impulse(Global Variable(HiddenPlayer), Vector(X Component Of(Facing Direction Of(Global Variable(HiddenPlayer))), Add(Y Component Of(Facing Direction Of(Global Variable(HiddenPlayer))), 0.35), Z Component Of(Facing Direction Of(Global Variable(HiddenPlayer)))), 17.5, To World, Cancel Contrary Motion);
     }
 }
 
@@ -346,6 +348,7 @@ rule("customMelee")
     // Action count: 9
     actions
     {
+        Set Global Variable(charge, Subtract(Global Variable(charge), Global Variable(meleeCost)));
         Set Melee Enabled(Global Variable(HiddenPlayer), True);
         Press Button(Global Variable(HiddenPlayer), Button(Melee));
         Set Melee Enabled(Global Variable(HiddenPlayer), False);
@@ -353,7 +356,6 @@ rule("customMelee")
         Damage(Ray Cast Hit Player(Eye Position(Global Variable(HiddenPlayer)), Add(Eye Position(Global Variable(HiddenPlayer)), Multiply(Facing Direction Of(Global Variable(HiddenPlayer)), 1.75)), All Players(Team(Team1)), Global Variable(HiddenPlayer), True), Global Variable(HiddenPlayer), 150);
         Set Damage Dealt(Global Variable(HiddenPlayer), 0);
         Play Effect(Global Variable(HiddenPlayer), Doomfist Rising Uppercut Impact Effect, Color(White), Ray Cast Hit Player(Eye Position(Global Variable(HiddenPlayer)), Add(Eye Position(Global Variable(HiddenPlayer)), Multiply(Facing Direction Of(Global Variable(HiddenPlayer)), 1.75)), All Players(Team(Team1)), Global Variable(HiddenPlayer), True), 1);
-        Set Global Variable(charge, Subtract(Global Variable(charge), Global Variable(meleeCost)));
         Wait(1, Ignore Condition);
     }
 }
@@ -373,18 +375,11 @@ rule("customUltimate")
         Or(Compare(Global Variable(charge), >=, Global Variable(ultActivateCost)), Global Variable(ultActive)) == True;
     }
 
-    // Action count: 9
+    // Action count: 2
     actions
     {
-        If(Compare(Global Variable(ultActive), ==, False));
-            Set Global Variable(charge, Subtract(Global Variable(charge), Global Variable(ultActivateCost)));
-        End;
+        Set Global Variable(charge, If-Then-Else(Global Variable(ultActive), Global Variable(charge), Subtract(Global Variable(charge), Global Variable(ultActivateCost))));
         Set Global Variable(ultActive, Not(Global Variable(ultActive)));
-        Set Global Variable(i, 0);
-        While(Compare(Global Variable(i), <, Number Of Living Players(Team(Team1))));
-            Start Forcing Player Outlines(Value In Array(All Living Players(Team(Team1)), Global Variable(i)), Global Variable(HiddenPlayer), True, If-Then-Else(Compare(Global Variable(ultActive), ==, True), Custom Color(Divide(255, Health(Value In Array(All Living Players(Team(Team1)), Global Variable(i)))), Divide(255, Divide(Global Variable(playerHealth), Health(Value In Array(All Living Players(Team(Team1)), Global Variable(i))))), 0, 255), Custom Color(0, 0, 0, 0)), Always);
-            Modify Global Variable(i, Add, 1);
-        End;
     }
 }
 
@@ -402,16 +397,21 @@ rule("channelUlt")
         Global Variable(ultActive) == True;
     }
 
-    // Action count: 7
+    // Action count: 12
     actions
     {
-        If(Compare(Global Variable(charge), <, 1));
-            Set Global Variable(ultActive, False);
-            Start Forcing Player Outlines(All Living Players(Team(Team1)), Global Variable(HiddenPlayer), True, Custom Color(0, 0, 0, 0), Always);
+        If(Compare(Global Variable(charge), >, Multiply(Global Variable(ultCost), Global Variable(tps))));
+            Set Global Variable(i, 0);
+            While(Compare(Global Variable(i), <, Number Of Living Players(Team(Team1))));
+                Start Forcing Player Outlines(Value In Array(All Living Players(Team(Team1)), Global Variable(i)), Global Variable(HiddenPlayer), True, Custom Color(Divide(255, Health(Value In Array(All Living Players(Team(Team1)), Global Variable(i)))), Divide(255, Divide(Global Variable(playerHealth), Health(Value In Array(All Living Players(Team(Team1)), Global Variable(i))))), 0, 255), Always);
+                Modify Global Variable(i, Add, 1);
+            End;
+            Set Global Variable(charge, Subtract(Global Variable(charge), Multiply(Global Variable(ultCost), Global Variable(tps))));
+            Wait(Global Variable(tps), Abort When False);
+            Loop;
         End;
-        Set Global Variable(charge, Subtract(Global Variable(charge), Multiply(Global Variable(ultCost), Divide(1, Global Variable(tickrate)))));
-        Wait(Divide(1, Global Variable(tickrate)), Abort When False);
-        Loop;
+        Set Global Variable(ultActive, False);
+        Start Forcing Player Outlines(All Living Players(Team(Team1)), Global Variable(HiddenPlayer), True, Custom Color(0, 0, 0, 0), Always);
     }
 }
 
@@ -455,8 +455,8 @@ rule("recharge")
     // Action count: 3
     actions
     {
-        Set Global Variable(charge, If-Then-Else(Compare(Add(Global Variable(charge), Multiply(Global Variable(rechargeRate), Divide(1, Global Variable(tickrate)))), >=, 100), 100, Add(Global Variable(charge), Multiply(Global Variable(rechargeRate), Divide(1, Global Variable(tickrate))))));
-        Wait(Divide(1, Global Variable(tickrate)), Abort When False);
+        Set Global Variable(charge, If-Then-Else(Compare(Add(Global Variable(charge), Multiply(Global Variable(rechargeRate), Global Variable(tps))), >=, 100), 100, Add(Global Variable(charge), Multiply(Global Variable(rechargeRate), Global Variable(tps)))));
+        Wait(Global Variable(tps), Abort When False);
         Loop;
     }
 }
@@ -484,7 +484,7 @@ rule("toggleDebugMode")
             Set Global Variable(HiddenPlayer, Null);
             Set Global Variable(debugMode, False);
         Else;
-            Create Dummy Bot(Hero(Genji), Opposite Team Of(Team Of(Host Player)), -1, Host Player, Host Player);
+            Create Dummy Bot(Hero(Roadhog), Opposite Team Of(Team Of(Host Player)), -1, Host Player, Host Player);
             Set Global Variable(HiddenPlayer, If-Then-Else(Compare(Team Of(Host Player), ==, Team(Team1)), Closest Player To(Host Player, Team(All)), Host Player));
             Set Global Variable(debugMode, True);
         End;

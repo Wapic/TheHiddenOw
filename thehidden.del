@@ -5,6 +5,7 @@ globalvar define debugMode = false;
 globalvar define playerHealth = 250;
 globalvar define maxCharge = 100;
 globalvar define tickrate = 40;
+globalvar define tps = 1 / tickrate;
 globalvar define charge = 100; //currentCharge
 globalvar define rechargeRate = 10; //charge per seconds
 globalvar define ultCost = 30; //charge per second
@@ -20,7 +21,7 @@ if (NumberOfPlayers(Team.All) == 6) {
     StartGameMode();
 }
 
-void disableFeatures() "disableFeatures" {
+void disableGameFeatures() "disableGameFeatures" {
     DisableRespawning(AllPlayers(Team.All));
     DisableCompletion();
     DisableScoring();
@@ -44,7 +45,7 @@ if (IsGameInProgress() == false) {
     SetObjectiveDescription(HiddenPlayer, "Eliminate all the survivors" ,HudTextRev.VisibleTo);
     SetObjectiveDescription(AllPlayers(Team.Team1), "Eliminate the hidden", HudTextRev.VisibleTo);
     StartForcingPlayerOutlines(AllPlayers(Team.All), AllPlayers(Team.All), true, CustomColor(0, 0, 0, 0), OutlineType.Always);
-    disableFeatures();
+    disableGameFeatures();
     PauseMatchTime();
     setSurvivorProperties();
 }
@@ -102,14 +103,15 @@ rule: "customDash"
 if ((IsGameInProgress() || debugMode) == true)
 if ((IsButtonHeld(HiddenPlayer, Button.Ability1) || IsButtonHeld(HiddenPlayer, Button.SecondaryFire)) == true)
 if (charge >= dashCost) {
-    ApplyImpulse(HiddenPlayer,Vector(FacingDirectionOf(HiddenPlayer).X, FacingDirectionOf(HiddenPlayer).Y + 0.35, FacingDirectionOf(HiddenPlayer).Z), 17.5, Relative.ToWorld, ContraryMotion.Cancel);
     charge = charge - dashCost;
+    ApplyImpulse(HiddenPlayer,Vector(FacingDirectionOf(HiddenPlayer).X, FacingDirectionOf(HiddenPlayer).Y + 0.35, FacingDirectionOf(HiddenPlayer).Z), 17.5, Relative.ToWorld, ContraryMotion.Cancel);
 }
 
 rule: "customMelee"
 if ((IsGameInProgress() || debugMode) == true)
 if ((IsButtonHeld(HiddenPlayer, Button.PrimaryFire) || IsButtonHeld(HiddenPlayer, Button.Melee)) == true)
 if (charge >= meleeCost) {
+    charge = charge - meleeCost;
     SetMeleeEnabled(HiddenPlayer, true);
     PressButton(HiddenPlayer, Button.Melee); //play melee animation
     SetMeleeEnabled(HiddenPlayer, false);
@@ -117,7 +119,6 @@ if (charge >= meleeCost) {
     Damage(RayCastHitPlayer(EyePosition(HiddenPlayer), EyePosition(HiddenPlayer) + FacingDirectionOf(HiddenPlayer) * 1.75, AllPlayers(Team.Team1), HiddenPlayer, true), HiddenPlayer, 150);
     SetDamageDealt(HiddenPlayer, 0);
     PlayEffect(HiddenPlayer, PlayEffect.DoomfistRisingUppercutImpactEffect, Color.White, RayCastHitPlayer(EyePosition(HiddenPlayer), EyePosition(HiddenPlayer) + FacingDirectionOf(HiddenPlayer) * 1.75, AllPlayers(Team.Team1), HiddenPlayer, true), 1);
-    charge = charge - meleeCost;
     Wait(1, WaitBehavior.IgnoreCondition); //wait 1s to allow melee animation to be available again
 }
 
@@ -125,26 +126,23 @@ rule: "customUltimate"
 if((IsGameInProgress() || debugMode) == true)
 if(IsButtonHeld(HiddenPlayer, Button.Ultimate) == true)
 if((charge >= ultActivateCost || ultActive) == true) {
-    if(ultActive == false){
-        charge = charge - ultActivateCost;
-    }
+    charge = ultActive ? charge : charge - ultActivateCost;
     ultActive = !ultActive;
-    for (define i = 0; i < NumberOfLivingPlayers(Team.Team1); i++)
-    {
-        StartForcingPlayerOutlines(AllLivingPlayers(Team.Team1)[i], HiddenPlayer, true, ultActive == true ? CustomColor(255 / Health(AllLivingPlayers(Team.Team1)[i]), 255 / (playerHealth / Health(AllLivingPlayers(Team.Team1)[i])), 0, 255) : CustomColor(0, 0, 0, 0), OutlineType.Always);    
-    }
 }
 
 rule: "channelUlt" 
 if((IsGameInProgress() || debugMode) == true)
-if(ultActive){
-    if(charge < 1){
-        ultActive = false;
-        StartForcingPlayerOutlines(AllLivingPlayers(Team.Team1), HiddenPlayer, true, CustomColor(0,0,0,0), OutlineType.Always);
+if(ultActive) {
+    if(charge > (ultCost * tps)) {
+        for (define i = 0; i < NumberOfLivingPlayers(Team.Team1); i++) {
+            StartForcingPlayerOutlines(AllLivingPlayers(Team.Team1)[i], HiddenPlayer, true, CustomColor(255 / Health(AllLivingPlayers(Team.Team1)[i]), 255 / (playerHealth / Health(AllLivingPlayers(Team.Team1)[i])), 0, 255), OutlineType.Always);    
+        }
+        charge = charge - (ultCost * tps);
+        Wait(tps, WaitBehavior.AbortWhenFalse);
+        Loop();
     }
-    charge = charge - (ultCost * (1 / tickrate));
-    Wait(1 / tickrate, WaitBehavior.AbortWhenFalse);
-    Loop();
+    ultActive = false;
+    StartForcingPlayerOutlines(AllLivingPlayers(Team.Team1), HiddenPlayer, true, CustomColor(0,0,0,0), OutlineType.Always);
 }
 
 void setSurvivorProperties() "setSurvivorProps" {
@@ -159,7 +157,7 @@ void setSurvivorProperties() "setSurvivorProps" {
 
 rule: "hiddenHUD"
 Event.OngoingGlobal
-if((IsGameInProgress() || debugMode) == true){
+if((IsGameInProgress() || debugMode) == true) {
     CreateHudText(HiddenPlayer, null, null, "Dash: Secondary Fire\nMelee: Primary Fire\nSpecial: Ultimate", Location.Left, 0, Color.White, Color.White, Color.White, HudTextRev.VisibleTo, Spectators.DefaultVisibility);
     CreateProgressBarHudText(HiddenPlayer, charge, null, Location.Left, 1, Color.Gray, Color.White, ProgressBarHudEvaluation.Values, Spectators.DefaultVisibility);
 }
@@ -168,9 +166,9 @@ rule: "recharge"
 if((IsGameInProgress() || debugMode) == true)
 if(!IsOnWall(HiddenPlayer))
 if(!ultActive)
-if(charge < maxCharge){
-    charge = charge + (rechargeRate * (1 / tickrate)) >= 100 ? 100: charge + (rechargeRate * (1 / tickrate));
-    Wait(1 / tickrate, WaitBehavior.AbortWhenFalse);
+if(charge < maxCharge) {
+    charge = charge + (rechargeRate * tps) >= 100 ? 100: charge + (rechargeRate * tps);
+    Wait(tps, WaitBehavior.AbortWhenFalse);
     Loop();
 }
 
@@ -183,7 +181,7 @@ if (IsButtonHeld(HostPlayer(), Button.Interact) == true) {
         HiddenPlayer = null;
         debugMode = false;
     } else {
-        CreateDummyBot(Hero.Genji, OppositeTeamOf(TeamOf(HostPlayer())), -1, HostPlayer(), HostPlayer());
+        CreateDummyBot(Hero.Roadhog, OppositeTeamOf(TeamOf(HostPlayer())), -1, HostPlayer(), HostPlayer());
         HiddenPlayer = TeamOf(HostPlayer()) == Team.Team1 ? ClosestPlayerTo(HostPlayer()) : HostPlayer();
         debugMode = true;
     }
