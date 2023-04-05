@@ -1,59 +1,9 @@
-settings
-{
-    main
-    {
-        Mode Name: "The Hidden: OW"
-    }
-    lobby
-    {
-        Allow Players Who Are In Queue: Yes
-        Map Rotation: Paused
-        Match Voice Chat: Enabled
-        Max Spectators: 12
-        Max Team 2 Players: 1
-        Return To Lobby: Never
-        Swap Teams After Match: No
-    }
-    modes
-    {
-        General
-        {
-            Allow Hero Switching: Off
-            Enemy Health Bars: Off
-            Game Mode Start: Manual
-            Hero Limit: 2 Per Team
-            Limit Roles: 2 Of Each Role Per Team
-            Respawn Time Scalar: 0%
-            Spawn Health Packs: Disabled
-        }
-        TeamDeathmatch
-        {
-            Game Length In Minutes: 5
-            Score To Win: 200
-            Self Initiated Respawn: Off
-            enabled maps
-            {
-                Château Guillard Halloween
-                Dorado
-                Eichenwalde Halloween
-                Hollywood Halloween
-                Route 66
-            }
-        }
-    }
-    extensions
-    {
-        Debuff Status Effects
-        Kinetic Explosion Effects
-    }
-}
-
 variables
 {
     global:
         0: HiddenPlayer
         1: debugMode
-        2: playerHealth
+        2: maxSurvivorHealth
         3: maxCharge
         4: tickrate
         5: tps
@@ -64,19 +14,26 @@ variables
         10: dashCost
         11: meleeCost
         12: ultActive
-        13: n
-        14: i
+        13: debugBot
+        14: playAsHidden
+        15: survivors
+        16: foreachIndex
+        17: hero
+        18: returnValue_GetMaxHealthOfHero
+        19: i
 }
 
 subroutines
 {
     0: disableGameFeatures
-    1: setSurvivorProperties
-    2: endGame
-    3: removeHiddenProps
+    1: setHiddenProps
+    2: setSurvivorProps
+    3: endGame
+    4: removeHiddenProps
+    5: disableUltimate
 }
 
-rule("Initial Global")
+rule("Initialize variables")
 {
 
     event
@@ -84,22 +41,21 @@ rule("Initial Global")
         Ongoing - Global;
     }
 
-    // Action count: 13
+    // Action count: 12
     actions
     {
-        Set Global Variable(HiddenPlayer, Null);
-        Set Global Variable(debugMode, False);
-        Set Global Variable(playerHealth, 250);
-        Set Global Variable(maxCharge, 100);
-        Set Global Variable(tickrate, 40);
+        Set Global Variable(tickrate, Workshop Setting Integer(Custom String("Game Settings", Null, Null, Null), Custom String("Tickrate", Null, Null, Null), 40, 10, 40, 0));
+        Set Global Variable(maxSurvivorHealth, Workshop Setting Integer(Custom String("Survivor Settings", Null, Null, Null), Custom String("Max health", Null, Null, Null), 250, 100, 500, 0));
+        Set Global Variable(meleeCost, Workshop Setting Integer(Custom String("The Hidden Settings", Null, Null, Null), Custom String("Melee cost", Null, Null, Null), 25, 0, 100, 0));
+        Set Global Variable(dashCost, Workshop Setting Integer(Custom String("The Hidden Settings", Null, Null, Null), Custom String("Dash cost", Null, Null, Null), 35, 0, 100, 1));
+        Set Global Variable(ultActivateCost, Workshop Setting Integer(Custom String("The Hidden Settings", Null, Null, Null), Custom String("Ult activation cost", Null, Null, Null), 15, 0, 100, 2));
+        Set Global Variable(ultCost, Workshop Setting Integer(Custom String("The Hidden Settings", Null, Null, Null), Custom String("Ult cost per second", Null, Null, Null), 30, 0, 100, 3));
+        Set Global Variable(maxCharge, Workshop Setting Integer(Custom String("The Hidden Settings", Null, Null, Null), Custom String("Maximum charge", Null, Null, Null), 100, 0, 500, 4));
+        Set Global Variable(rechargeRate, Workshop Setting Integer(Custom String("The Hidden Settings", Null, Null, Null), Custom String("Recharge rate", Null, Null, Null), 10, 0, 100, 5));
+        Set Global Variable(debugMode, Workshop Setting Toggle(Custom String("Debug Settings", Null, Null, Null), Custom String("Debug Mode", Null, Null, Null), False, 0));
+        Set Global Variable(playAsHidden, Workshop Setting Toggle(Custom String("Debug Settings", Null, Null, Null), Custom String("Play as Hidden", Null, Null, Null), False, 1));
         Set Global Variable(tps, Divide(1, Global Variable(tickrate)));
-        Set Global Variable(charge, 100);
-        Set Global Variable(rechargeRate, 10);
-        Set Global Variable(ultCost, 30);
-        Set Global Variable(ultActivateCost, 15);
-        Set Global Variable(dashCost, 35);
-        Set Global Variable(meleeCost, 25);
-        Set Global Variable(ultActive, False);
+        Set Global Variable(charge, Global Variable(maxCharge));
     }
 }
 
@@ -144,27 +100,46 @@ rule("disableGameFeatures")
     }
 }
 
-rule("setSurvivorProps")
+rule("setHiddenProperties")
 {
 
     event
     {
         Subroutine;
-        setSurvivorProperties;
+        setHiddenProps;
     }
 
-    // Action count: 9
+    // Action count: 12
     actions
     {
-        Set Global Variable(n, 0);
-        While(Compare(Global Variable(n), <, Number Of Players(Team(Team1))));
-            If(Compare(Max Health(Value In Array(All Players(Team(Team1)), Global Variable(n))), !=, 250));
-                Set Max Health(Value In Array(All Players(Team(Team1)), Global Variable(n)), Multiply(Divide(Global Variable(playerHealth), Max Health(Value In Array(All Living Players(Team(Team1)), Global Variable(n)))), 100));
-                Set Player Health(Value In Array(All Players(Team(Team1)), Global Variable(n)), Global Variable(playerHealth));
-                Wait(0.1, Ignore Condition);
-            End;
-            Modify Global Variable(n, Add, 1);
-        End;
+        Start Forcing Player To Be Hero(Global Variable(HiddenPlayer), Hero(Genji));
+        Set Invisible(Global Variable(HiddenPlayer), All);
+        Set Move Speed(Global Variable(HiddenPlayer), 135);
+        Set Damage Dealt(Global Variable(HiddenPlayer), 0);
+        Set Melee Enabled(Global Variable(HiddenPlayer), False);
+        Set Ability 1 Enabled(Global Variable(HiddenPlayer), False);
+        Set Ability 2 Enabled(Global Variable(HiddenPlayer), False);
+        Set Primary Fire Enabled(Global Variable(HiddenPlayer), False);
+        Set Secondary Fire Enabled(Global Variable(HiddenPlayer), False);
+        Set Ultimate Ability Enabled(Global Variable(HiddenPlayer), False);
+        Disable Movement Collision With Players(Global Variable(HiddenPlayer));
+        Create Effect(Players Within Radius(Global Variable(HiddenPlayer), 15, Team(Team1), Surfaces And All Barriers), Mei Frozen Effect, Color(Gray), Vector(X Component Of(Position Of(Global Variable(HiddenPlayer))), Add(Y Component Of(Position Of(Global Variable(HiddenPlayer))), 0.75), Z Component Of(Position Of(Global Variable(HiddenPlayer)))), 1.5, Visible To Position and Radius);
+    }
+}
+
+rule("setSurvivorProperties")
+{
+
+    event
+    {
+        Subroutine;
+        setSurvivorProps;
+    }
+
+    // Action count: 1
+    actions
+    {
+        Set Player Health(All Living Players(Team(Team1)), Global Variable(maxSurvivorHealth));
     }
 }
 
@@ -182,19 +157,66 @@ rule("startGame")
         Is Game In Progress == False;
     }
 
-    // Action count: 10
+    // Action count: 57
     actions
     {
-        Move Player To Team(First Of(All Players(Team(Team2))), Team(Team1), -1);
-        Set Global Variable(HiddenPlayer, Random Value In Array(All Players(Team(Team1))));
-        Move Player To Team(Global Variable(HiddenPlayer), Team(Team2), -1);
+        If(Compare(Global Variable(debugMode), ==, False));
+            Move Player To Team(First Of(All Players(Team(Team2))), Team(Team1), -1);
+            Set Global Variable(HiddenPlayer, Random Value In Array(All Players(Team(Team1))));
+            Move Player To Team(Global Variable(HiddenPlayer), Team(Team2), -1);
+        Else;
+            Create Dummy Bot(Hero(Genji), If-Then-Else(Global Variable(playAsHidden), Team(Team1), Team(Team2)), -1, Host Player, Facing Direction Of(Host Player));
+            Set Global Variable(debugBot, Last Created Entity);
+            Set Global Variable(HiddenPlayer, If-Then-Else(Global Variable(playAsHidden), Host Player, Players In Slot(0, Team(Team2))));
+        End;
         Wait Until(Is Game In Progress, 30);
         Set Objective Description(Global Variable(HiddenPlayer), Custom String("Eliminate all the survivors", Null, Null, Null), Visible To);
         Set Objective Description(All Players(Team(Team1)), Custom String("Eliminate the hidden", Null, Null, Null), Visible To);
         Start Forcing Player Outlines(All Players(Team(All)), All Players(Team(All)), True, Custom Color(0, 0, 0, 0), Always);
         Call Subroutine(disableGameFeatures);
         Pause Match Time;
-        Call Subroutine(setSurvivorProperties);
+        For Global Variable(foreachIndex, 0, Count Of(All Living Players(Team(Team1))), 1);
+            Wait Until(Has Spawned(Value In Array(All Living Players(Team(Team1)), Global Variable(foreachIndex))), 1);
+            If(Has Spawned(Value In Array(All Living Players(Team(Team1)), Global Variable(foreachIndex))));
+                Set Global Variable(hero, Hero Of(Value In Array(All Living Players(Team(Team1)), Global Variable(foreachIndex))));
+                Skip(Value In Array(Array(31, 0, 3, 6, 9, 9, 9, 12, 15, 15, 15, 15, 18, 18, 18, 18, 21, 21, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 24, 27, 30), Add(Index Of Array Value(Array(Hero(Roadhog), Hero(D.va), Hero(Reinhardt), Hero(Sigma), Hero(Orisa), Hero(Winston), Hero(Zarya), Hero(Doomfist), Hero(Junker Queen), Hero(Ramattra), Hero(Bastion), Hero(Wrecking Ball), Hero(Mei), Hero(Reaper), Hero(Torbjörn), Hero(Cassidy), Hero(Symmetra), Hero(Ashe), Hero(Echo), Hero(Genji), Hero(Hanzo), Hero(Junkrat), Hero(Pharah), Hero(Sojourn), Hero(Soldier: 76), Hero(Sombra), Hero(Ana), Hero(Baptiste), Hero(Brigitte), Hero(Kiriko), Hero(Lúcio), Hero(Mercy), Hero(Moira), Hero(Zenyatta), Hero(Widowmaker), Hero(Tracer)), Global Variable(hero)), 1)));
+                Set Global Variable(returnValue_GetMaxHealthOfHero, 550);
+                Skip(29);
+                Skip(28);
+                Set Global Variable(returnValue_GetMaxHealthOfHero, 500);
+                Skip(26);
+                Skip(25);
+                Set Global Variable(returnValue_GetMaxHealthOfHero, 475);
+                Skip(23);
+                Skip(22);
+                Set Global Variable(returnValue_GetMaxHealthOfHero, 400);
+                Skip(20);
+                Skip(19);
+                Set Global Variable(returnValue_GetMaxHealthOfHero, 325);
+                Skip(17);
+                Skip(16);
+                Set Global Variable(returnValue_GetMaxHealthOfHero, 300);
+                Skip(14);
+                Skip(13);
+                Set Global Variable(returnValue_GetMaxHealthOfHero, 250);
+                Skip(11);
+                Skip(10);
+                Set Global Variable(returnValue_GetMaxHealthOfHero, 225);
+                Skip(8);
+                Skip(7);
+                Set Global Variable(returnValue_GetMaxHealthOfHero, 200);
+                Skip(5);
+                Skip(4);
+                Set Global Variable(returnValue_GetMaxHealthOfHero, 175);
+                Skip(2);
+                Skip(1);
+                Set Global Variable(returnValue_GetMaxHealthOfHero, 150);
+                Set Max Health(Value In Array(All Living Players(Team(Team1)), Global Variable(foreachIndex)), Add(Multiply(Divide(Global Variable(maxSurvivorHealth), Global Variable(returnValue_GetMaxHealthOfHero)), 100), 0.05));
+            End;
+        End;
+        Wait Until(Has Spawned(Global Variable(HiddenPlayer)), 20);
+        Call Subroutine(setHiddenProps);
+        Call Subroutine(setSurvivorProps);
     }
 }
 
@@ -237,11 +259,13 @@ rule("endGame")
         endGame;
     }
 
-    // Action count: 4
+    // Action count: 6
     actions
     {
         Call Subroutine(removeHiddenProps);
         Set Global Variable(HiddenPlayer, Null);
+        Set Global Variable(charge, Global Variable(maxCharge));
+        Destroy All Dummy Bots;
         Unpause Match Time;
         Go To Assemble Heroes;
     }
@@ -274,39 +298,6 @@ rule("onDeath")
     }
 }
 
-rule("setHiddenProperties")
-{
-
-    event
-    {
-        Ongoing - Each Player;
-        Team2;
-        Slot0;
-    }
-
-    conditions
-    {
-        Global Variable(HiddenPlayer) != Null;
-    }
-
-    // Action count: 12
-    actions
-    {
-        Start Forcing Player To Be Hero(Global Variable(HiddenPlayer), Hero(Genji));
-        Set Invisible(Global Variable(HiddenPlayer), All);
-        Set Move Speed(Global Variable(HiddenPlayer), 135);
-        Set Damage Dealt(Global Variable(HiddenPlayer), 0);
-        Set Melee Enabled(Global Variable(HiddenPlayer), False);
-        Set Ability 1 Enabled(Global Variable(HiddenPlayer), False);
-        Set Ability 2 Enabled(Global Variable(HiddenPlayer), False);
-        Set Primary Fire Enabled(Global Variable(HiddenPlayer), False);
-        Set Secondary Fire Enabled(Global Variable(HiddenPlayer), False);
-        Set Ultimate Ability Enabled(Global Variable(HiddenPlayer), False);
-        Disable Movement Collision With Players(Global Variable(HiddenPlayer));
-        Create Effect(Players Within Radius(Global Variable(HiddenPlayer), 15, Team(Team1), Surfaces And All Barriers), Mei Frozen Effect, Color(Gray), Vector(X Component Of(Position Of(Global Variable(HiddenPlayer))), Add(Y Component Of(Position Of(Global Variable(HiddenPlayer))), 0.75), Z Component Of(Position Of(Global Variable(HiddenPlayer)))), 1.5, Visible To Position and Radius);
-    }
-}
-
 rule("customDash")
 {
 
@@ -317,7 +308,7 @@ rule("customDash")
 
     conditions
     {
-        Or(Is Game In Progress, Global Variable(debugMode)) == True;
+        Is Game In Progress == True;
         Or(Is Button Held(Global Variable(HiddenPlayer), Button(Ability 1)), Is Button Held(Global Variable(HiddenPlayer), Button(Secondary Fire))) == True;
         Global Variable(charge) >= Global Variable(dashCost);
     }
@@ -340,7 +331,7 @@ rule("customMelee")
 
     conditions
     {
-        Or(Is Game In Progress, Global Variable(debugMode)) == True;
+        Is Game In Progress == True;
         Or(Is Button Held(Global Variable(HiddenPlayer), Button(Primary Fire)), Is Button Held(Global Variable(HiddenPlayer), Button(Melee))) == True;
         Global Variable(charge) >= Global Variable(meleeCost);
     }
@@ -353,10 +344,27 @@ rule("customMelee")
         Press Button(Global Variable(HiddenPlayer), Button(Melee));
         Set Melee Enabled(Global Variable(HiddenPlayer), False);
         Set Damage Dealt(Global Variable(HiddenPlayer), 100);
-        Damage(Ray Cast Hit Player(Eye Position(Global Variable(HiddenPlayer)), Add(Eye Position(Global Variable(HiddenPlayer)), Multiply(Facing Direction Of(Global Variable(HiddenPlayer)), 1.75)), All Players(Team(Team1)), Global Variable(HiddenPlayer), True), Global Variable(HiddenPlayer), 150);
+        Damage(Ray Cast Hit Player(Eye Position(Global Variable(HiddenPlayer)), Add(Eye Position(Global Variable(HiddenPlayer)), Multiply(Facing Direction Of(Global Variable(HiddenPlayer)), 2)), All Players(Team(Team1)), Global Variable(HiddenPlayer), True), Global Variable(HiddenPlayer), 150);
         Set Damage Dealt(Global Variable(HiddenPlayer), 0);
         Play Effect(Global Variable(HiddenPlayer), Doomfist Rising Uppercut Impact Effect, Color(White), Ray Cast Hit Player(Eye Position(Global Variable(HiddenPlayer)), Add(Eye Position(Global Variable(HiddenPlayer)), Multiply(Facing Direction Of(Global Variable(HiddenPlayer)), 1.75)), All Players(Team(Team1)), Global Variable(HiddenPlayer), True), 1);
         Wait(1, Ignore Condition);
+    }
+}
+
+rule("disableUlt")
+{
+
+    event
+    {
+        Subroutine;
+        disableUltimate;
+    }
+
+    // Action count: 2
+    actions
+    {
+        Set Global Variable(ultActive, False);
+        Start Forcing Player Outlines(All Living Players(Team(Team1)), Global Variable(HiddenPlayer), True, Custom Color(0, 0, 0, 0), Always);
     }
 }
 
@@ -370,16 +378,20 @@ rule("customUltimate")
 
     conditions
     {
-        Or(Is Game In Progress, Global Variable(debugMode)) == True;
+        Is Game In Progress == True;
         Is Button Held(Global Variable(HiddenPlayer), Button(Ultimate)) == True;
         Or(Compare(Global Variable(charge), >=, Global Variable(ultActivateCost)), Global Variable(ultActive)) == True;
     }
 
-    // Action count: 2
+    // Action count: 6
     actions
     {
-        Set Global Variable(charge, If-Then-Else(Global Variable(ultActive), Global Variable(charge), Subtract(Global Variable(charge), Global Variable(ultActivateCost))));
-        Set Global Variable(ultActive, Not(Global Variable(ultActive)));
+        If(Global Variable(ultActive));
+            Call Subroutine(disableUltimate);
+            Abort;
+        End;
+        Set Global Variable(charge, Subtract(Global Variable(charge), Global Variable(ultActivateCost)));
+        Set Global Variable(ultActive, True);
     }
 }
 
@@ -393,25 +405,24 @@ rule("channelUlt")
 
     conditions
     {
-        Or(Is Game In Progress, Global Variable(debugMode)) == True;
+        Is Game In Progress == True;
         Global Variable(ultActive) == True;
     }
 
-    // Action count: 12
+    // Action count: 11
     actions
     {
         If(Compare(Global Variable(charge), >, Multiply(Global Variable(ultCost), Global Variable(tps))));
             Set Global Variable(i, 0);
             While(Compare(Global Variable(i), <, Number Of Living Players(Team(Team1))));
-                Start Forcing Player Outlines(Value In Array(All Living Players(Team(Team1)), Global Variable(i)), Global Variable(HiddenPlayer), True, Custom Color(Divide(255, Health(Value In Array(All Living Players(Team(Team1)), Global Variable(i)))), Divide(255, Divide(Global Variable(playerHealth), Health(Value In Array(All Living Players(Team(Team1)), Global Variable(i))))), 0, 255), Always);
+                Start Forcing Player Outlines(Value In Array(All Living Players(Team(Team1)), Global Variable(i)), Global Variable(HiddenPlayer), True, Custom Color(Divide(255, Health(Value In Array(All Living Players(Team(Team1)), Global Variable(i)))), Divide(255, Divide(Global Variable(maxSurvivorHealth), Health(Value In Array(All Living Players(Team(Team1)), Global Variable(i))))), 0, 255), Always);
                 Modify Global Variable(i, Add, 1);
             End;
             Set Global Variable(charge, Subtract(Global Variable(charge), Multiply(Global Variable(ultCost), Global Variable(tps))));
-            Wait(Global Variable(tps), Abort When False);
+            Wait(Global Variable(tps), Ignore Condition);
             Loop;
         End;
-        Set Global Variable(ultActive, False);
-        Start Forcing Player Outlines(All Living Players(Team(Team1)), Global Variable(HiddenPlayer), True, Custom Color(0, 0, 0, 0), Always);
+        Call Subroutine(disableUltimate);
     }
 }
 
@@ -425,7 +436,7 @@ rule("hiddenHUD")
 
     conditions
     {
-        Or(Is Game In Progress, Global Variable(debugMode)) == True;
+        Is Game In Progress == True;
     }
 
     // Action count: 2
@@ -446,7 +457,7 @@ rule("recharge")
 
     conditions
     {
-        Or(Is Game In Progress, Global Variable(debugMode)) == True;
+        Is Game In Progress == True;
         Not(Is On Wall(Global Variable(HiddenPlayer))) == True;
         Not(Global Variable(ultActive)) == True;
         Global Variable(charge) < Global Variable(maxCharge);
@@ -458,35 +469,5 @@ rule("recharge")
         Set Global Variable(charge, If-Then-Else(Compare(Add(Global Variable(charge), Multiply(Global Variable(rechargeRate), Global Variable(tps))), >=, 100), 100, Add(Global Variable(charge), Multiply(Global Variable(rechargeRate), Global Variable(tps)))));
         Wait(Global Variable(tps), Abort When False);
         Loop;
-    }
-}
-
-rule("toggleDebugMode")
-{
-
-    event
-    {
-        Ongoing - Global;
-    }
-
-    conditions
-    {
-        Is Game In Progress == False;
-        Is Button Held(Host Player, Button(Interact)) == True;
-    }
-
-    // Action count: 10
-    actions
-    {
-        If(Global Variable(debugMode));
-            Destroy All Dummy Bots;
-            Call Subroutine(removeHiddenProps);
-            Set Global Variable(HiddenPlayer, Null);
-            Set Global Variable(debugMode, False);
-        Else;
-            Create Dummy Bot(Hero(Roadhog), Opposite Team Of(Team Of(Host Player)), -1, Host Player, Host Player);
-            Set Global Variable(HiddenPlayer, If-Then-Else(Compare(Team Of(Host Player), ==, Team(Team1)), Closest Player To(Host Player, Team(All)), Host Player));
-            Set Global Variable(debugMode, True);
-        End;
     }
 }
