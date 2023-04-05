@@ -1,18 +1,44 @@
-import "customGameSettings.lobby";
+globalvar Any HiddenPlayer;
+globalvar Boolean debugMode;
+globalvar Number maxSurvivorHealth;
+globalvar Number maxCharge;
+globalvar Number tickrate;
+globalvar Number tps;
+globalvar Number charge; //currentCharge
+globalvar Number rechargeRate; //charge per seconds
+globalvar Number ultCost; //charge per second
+globalvar Number ultActivateCost; //cost per activation
+globalvar Number dashCost; //cost per usage
+globalvar Number meleeCost; //cost per usage
+globalvar Boolean ultActive;
+globalvar Any debugBot;
+globalvar Boolean playAsHidden;
+globalvar Player[] survivors;
 
-globalvar define HiddenPlayer = null;
-globalvar define debugMode = false;
-globalvar define playerHealth = 250;
-globalvar define maxCharge = 100;
-globalvar define tickrate = 40;
-globalvar define tps = 1 / tickrate;
-globalvar define charge = 100; //currentCharge
-globalvar define rechargeRate = 10; //charge per seconds
-globalvar define ultCost = 30; //charge per second
-globalvar define ultActivateCost = 15; //cost per activation
-globalvar define dashCost = 35; //cost per usage
-globalvar define meleeCost = 25; //cost per usage
-globalvar define ultActive = false;
+rule: 'Initialize variables'
+{
+    //Game Settings
+    tickrate = WorkshopSettingInteger("Game Settings", "Tickrate", 40, 10, 40, 0);
+
+    //Survivors
+    maxSurvivorHealth = WorkshopSettingInteger("Survivor Settings", "Max health", 250, 100, 500, 0);
+
+    //HiddenPlayer
+    meleeCost = WorkshopSettingInteger("The Hidden Settings", "Melee cost", 25, 0, 100, 0);
+    dashCost = WorkshopSettingInteger("The Hidden Settings", "Dash cost", 35, 0, 100, 1);
+    ultActivateCost= WorkshopSettingInteger("The Hidden Settings", "Ult activation cost", 15, 0, 100, 2);
+    ultCost = WorkshopSettingInteger("The Hidden Settings", "Ult cost per second", 30, 0, 100, 3);
+    maxCharge = WorkshopSettingInteger("The Hidden Settings", "Maximum charge", 100, 0, 500, 4);
+    rechargeRate = WorkshopSettingInteger("The Hidden Settings", "Recharge rate", 10, 0, 100, 5);
+
+    //Debug settings
+    debugMode = WorkshopSettingToggle("Debug Settings", "Debug Mode", false, 0);
+    playAsHidden = WorkshopSettingToggle("Debug Settings", "Play as Hidden", false, 1);
+    
+    //Initialize non configureable options
+    tps = 1 / tickrate;
+    charge = maxCharge;
+}
 
 rule: "onFullLobby"
 if (IsGameInProgress() == false)
@@ -31,6 +57,8 @@ void disableGameFeatures() "disableGameFeatures" {
 void endGame() "endGame" {
     removeHiddenProps();
     HiddenPlayer = null;
+    charge = maxCharge;
+    DestroyAllDummyBots();
     UnpauseMatchTime();
     GoToAssembleHeroes();
 }
@@ -38,16 +66,31 @@ void endGame() "endGame" {
 rule: "startGame" 
 if (IsAssemblingHeroes() == true) 
 if (IsGameInProgress() == false) {
-    MovePlayerToTeam(AllPlayers(Team.Team2)[0], Team.Team1, -1);
-    HiddenPlayer = RandomValueInArray(AllPlayers(Team.Team1));
-    MovePlayerToTeam(HiddenPlayer, Team.Team2, -1);
+    if(debugMode == false) {
+        MovePlayerToTeam(AllPlayers(Team.Team2)[0], Team.Team1, -1);
+        HiddenPlayer = RandomValueInArray(AllPlayers(Team.Team1));
+        MovePlayerToTeam(HiddenPlayer, Team.Team2, -1);
+    } else {
+        debugBot = CreateDummyBot(Hero.Genji, playAsHidden ? Team.Team1 : Team.Team2, -1, HostPlayer(), FacingDirectionOf(HostPlayer()));
+        HiddenPlayer = playAsHidden ? HostPlayer() : PlayersInSlot(0, Team.Team2);
+    }
     WaitUntil(IsGameInProgress(), 30);
     SetObjectiveDescription(HiddenPlayer, "Eliminate all the survivors" ,HudTextRev.VisibleTo);
     SetObjectiveDescription(AllPlayers(Team.Team1), "Eliminate the hidden", HudTextRev.VisibleTo);
     StartForcingPlayerOutlines(AllPlayers(Team.All), AllPlayers(Team.All), true, CustomColor(0, 0, 0, 0), OutlineType.Always);
     disableGameFeatures();
     PauseMatchTime();
-    setSurvivorProperties();
+
+    //Set Survivor max health (A living player is not the same as a spawned player)
+    foreach (define player in AllLivingPlayers(Team.Team1)){
+        WaitUntil(HasSpawned(player), 1);
+        if(HasSpawned(player)){
+            SetMaxHealth(player, (maxSurvivorHealth / GetMaxHealthOfHero(HeroOf(player)) * 100));
+            SetPlayerHealth(player, MaxHealth(player));
+        }
+    }
+    WaitUntil(HasSpawned(HiddenPlayer), 20);
+    setHiddenProps();
 }
 
 rule: "onDeath"
@@ -62,11 +105,7 @@ if (IsGameInProgress() == true) {
     endGame();
 }
 
-rule: "setHiddenProperties"
-Event.OngoingPlayer
-Team.Team2
-Player.Slot0
-if (HiddenPlayer != null) { //why this doesn't work as a subroutine/void is beyond me
+void setHiddenProps() "setHiddenProperties" { //why this doesn't work as a subroutine/void is beyond me
     ForcePlayerHero(HiddenPlayer, Hero.Genji);
     SetInvisible(HiddenPlayer, InvisibleTo.All);
     SetMoveSpeed(HiddenPlayer, 135);
@@ -100,7 +139,7 @@ void removeHiddenProps() "removeHiddenProperties" {
 }
 
 rule: "customDash"
-if ((IsGameInProgress() || debugMode) == true)
+if (IsGameInProgress() == true)
 if ((IsButtonHeld(HiddenPlayer, Button.Ability1) || IsButtonHeld(HiddenPlayer, Button.SecondaryFire)) == true)
 if (charge >= dashCost) {
     charge = charge - dashCost;
@@ -108,7 +147,7 @@ if (charge >= dashCost) {
 }
 
 rule: "customMelee"
-if ((IsGameInProgress() || debugMode) == true)
+if (IsGameInProgress() == true)
 if ((IsButtonHeld(HiddenPlayer, Button.PrimaryFire) || IsButtonHeld(HiddenPlayer, Button.Melee)) == true)
 if (charge >= meleeCost) {
     charge = charge - meleeCost;
@@ -116,54 +155,52 @@ if (charge >= meleeCost) {
     PressButton(HiddenPlayer, Button.Melee); //play melee animation
     SetMeleeEnabled(HiddenPlayer, false);
     SetDamageDealt(HiddenPlayer, 100);
-    Damage(RayCastHitPlayer(EyePosition(HiddenPlayer), EyePosition(HiddenPlayer) + FacingDirectionOf(HiddenPlayer) * 1.75, AllPlayers(Team.Team1), HiddenPlayer, true), HiddenPlayer, 150);
+    Damage(RayCastHitPlayer(EyePosition(HiddenPlayer), EyePosition(HiddenPlayer) + FacingDirectionOf(HiddenPlayer) * 2, AllPlayers(Team.Team1), HiddenPlayer, true), HiddenPlayer, 150);
     SetDamageDealt(HiddenPlayer, 0);
     PlayEffect(HiddenPlayer, PlayEffect.DoomfistRisingUppercutImpactEffect, Color.White, RayCastHitPlayer(EyePosition(HiddenPlayer), EyePosition(HiddenPlayer) + FacingDirectionOf(HiddenPlayer) * 1.75, AllPlayers(Team.Team1), HiddenPlayer, true), 1);
     Wait(1, WaitBehavior.IgnoreCondition); //wait 1s to allow melee animation to be available again
 }
 
 rule: "customUltimate"
-if((IsGameInProgress() || debugMode) == true)
+if(IsGameInProgress() == true)
 if(IsButtonHeld(HiddenPlayer, Button.Ultimate) == true)
 if((charge >= ultActivateCost || ultActive) == true) {
-    charge = ultActive ? charge : charge - ultActivateCost;
-    ultActive = !ultActive;
+    if(ultActive){
+        disableUltimate();
+        Abort();
+    }
+    charge = charge - ultActivateCost;
+    ultActive = true;
 }
 
-rule: "channelUlt" 
-if((IsGameInProgress() || debugMode) == true)
-if(ultActive) {
-    if(charge > (ultCost * tps)) {
-        for (define i = 0; i < NumberOfLivingPlayers(Team.Team1); i++) {
-            StartForcingPlayerOutlines(AllLivingPlayers(Team.Team1)[i], HiddenPlayer, true, CustomColor(255 / Health(AllLivingPlayers(Team.Team1)[i]), 255 / (playerHealth / Health(AllLivingPlayers(Team.Team1)[i])), 0, 255), OutlineType.Always);    
-        }
-        charge = charge - (ultCost * tps);
-        Wait(tps, WaitBehavior.AbortWhenFalse);
-        Loop();
-    }
+void disableUltimate() "disableUlt" {
     ultActive = false;
     StartForcingPlayerOutlines(AllLivingPlayers(Team.Team1), HiddenPlayer, true, CustomColor(0,0,0,0), OutlineType.Always);
 }
 
-void setSurvivorProperties() "setSurvivorProps" {
-    for (define n = 0; n < NumberOfPlayers(Team.Team1); n++){
-        if(MaxHealth(AllPlayers(Team.Team1)[n]) != 250){
-            SetMaxHealth(AllPlayers(Team.Team1)[n], playerHealth / MaxHealth(AllLivingPlayers(Team.Team1)[n]) * 100);
-            SetPlayerHealth(AllPlayers(Team.Team1)[n], playerHealth);
-            Wait(0.1);
+rule: "channelUlt" 
+if(IsGameInProgress() == true)
+if(ultActive) {
+    if(charge > (ultCost * tps)) {
+        for (define i = 0; i < NumberOfLivingPlayers(Team.Team1); i++) {
+            StartForcingPlayerOutlines(AllLivingPlayers(Team.Team1)[i], HiddenPlayer, true, CustomColor(255 / Health(AllLivingPlayers(Team.Team1)[i]), 255 / (maxSurvivorHealth / Health(AllLivingPlayers(Team.Team1)[i])), 0, 255), OutlineType.Always);    
         }
+        charge = charge - (ultCost * tps);
+        Wait(tps);
+        Loop();
     }
+    disableUltimate();
 }
 
 rule: "hiddenHUD"
 Event.OngoingGlobal
-if((IsGameInProgress() || debugMode) == true) {
+if(IsGameInProgress() == true) {
     CreateHudText(HiddenPlayer, null, null, "Dash: Secondary Fire\nMelee: Primary Fire\nSpecial: Ultimate", Location.Left, 0, Color.White, Color.White, Color.White, HudTextRev.VisibleTo, Spectators.DefaultVisibility);
     CreateProgressBarHudText(HiddenPlayer, charge, null, Location.Left, 1, Color.Gray, Color.White, ProgressBarHudEvaluation.Values, Spectators.DefaultVisibility);
 }
 
 rule: "recharge"
-if((IsGameInProgress() || debugMode) == true)
+if(IsGameInProgress() == true)
 if(!IsOnWall(HiddenPlayer))
 if(!ultActive)
 if(charge < maxCharge) {
@@ -172,17 +209,65 @@ if(charge < maxCharge) {
     Loop();
 }
 
-rule: "toggleDebugMode"
-if (IsGameInProgress() == false)
-if (IsButtonHeld(HostPlayer(), Button.Interact) == true) {
-    if (debugMode) {
-        DestroyAllDummyBots();
-        removeHiddenProps();
-        HiddenPlayer = null;
-        debugMode = false;
-    } else {
-        CreateDummyBot(Hero.Roadhog, OppositeTeamOf(TeamOf(HostPlayer())), -1, HostPlayer(), HostPlayer());
-        HiddenPlayer = TeamOf(HostPlayer()) == Team.Team1 ? ClosestPlayerTo(HostPlayer()) : HostPlayer();
-        debugMode = true;
+Number GetMaxHealthOfHero(Hero hero) {
+    switch(hero){
+        case Hero.Roadhog:
+            return 550;
+        break;
+        case Hero.Dva:
+            return 500;
+        break;
+        case Hero.Reinhardt:
+            return 475;
+        break;
+        case Hero.Sigma:
+        case Hero.Orisa:
+        case Hero.Winston:
+            return 400;
+        break;
+        case Hero.Zarya:
+            return 325;
+        break;
+        case Hero.Doomfist:      
+        case Hero.JunkerQueen:
+        case Hero.Ramattra:
+        case Hero.Bastion:
+            return 300;
+        break;
+        case Hero.WreckingBall:
+        case Hero.Mei:
+        case Hero.Reaper:
+        case Hero.Torbjorn:
+            return 250;
+        break;
+        case Hero.Cassidy:
+        case Hero.Symmetra:
+            return 225;
+        break;
+        case Hero.Ashe:
+        case Hero.Echo:
+        case Hero.Genji:
+        case Hero.Hanzo:
+        case Hero.Junkrat:
+        case Hero.Pharah:
+        case Hero.Sojourn:
+        case Hero.Soldier76:
+        case Hero.Sombra:
+        case Hero.Ana:
+        case Hero.Baptiste:
+        case Hero.Brigitte:
+        case Hero.Kiriko:
+        case Hero.Lucio:
+        case Hero.Mercy:
+        case Hero.Moira:
+        case Hero.Zenyatta:
+            return 200;
+        break;
+        case Hero.Widowmaker:
+            return 175;
+        break;
+        case Hero.Tracer:
+            return 150;
+        break;
     }
 }
